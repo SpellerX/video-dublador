@@ -1,0 +1,36 @@
+# Normalise line endings so the repo is identical on every platform.
+* text=auto eol=lf
+
+# Windows launchers stay CRLF: cmd.exe and PowerShell both prefer it, and
+# a .cmd file with bare LF can misbehave in some shells.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Source
+*.py    text diff=python
+*.js    text
+*.json  text
+*.md    text
+*.html  text
+*.toml  text
+*.yaml  text
+
+# Binary - never touch these
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.whl   binary
+*.pth   binary
+*.safetensors binary
+
+# Keep diffs readable and avoid noisy churn
+*.woff  binary
+*.woff2 binary
+
+# Linguist: this is a Python project even though the UI is in an HTML file
+dublador/static/*.html linguist-detectable=false

@@ -1,0 +1,86 @@
+# ---------------------------------------------------------------------------
+#  Video Dublador - o que NAO vai para o repositorio
+#
+#  O projeto e autocontido: Python portatil, ffmpeg e os modelos (~4,5 GB)
+#  ficam dentro da pasta. Nada disso e codigo-fonte e nada disso deve ser
+#  versionado. Rode `tools/bootstrap.py` para reconstruir tudo.
+# ---------------------------------------------------------------------------
+
+# --- runtime portatil (gigabytes de binarios baixados) ---------------------
+.python/
+.tools/
+models/
+tools/dist/
+
+# --- caches de execucao ----------------------------------------------------
+cache/
+.cache/
+logs/
+work/
+output/*
+!output/.gitkeep
+input/*
+!input/.gitkeep
+
+# --- artefatos de build / Python -------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# --- midia e modelos (nunca versionar conteudo de terceiros) ---------------
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+*.m4v
+*.wmv
+*.flv
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.aac
+*.ogg
+*.opus
+*.pth
+*.pt
+*.safetensors
+*.ckpt
+*.bin
+*.onnx
+*.zip
+*.tar.gz
+*.whl
+
+# --- segredos e configuracoes locais ---------------------------------------
+.env
+.env.*
+*.token
+*token*.txt
+secrets.json
+credentials.json
+config.local.json
+*.pem
+*.key
+
+# --- sistema operacional / editores ----------------------------------------
+Thumbs.db
+desktop.ini
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+*.code-workspace

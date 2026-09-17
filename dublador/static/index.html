@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Dublador</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#161d26; --panel2:#1c2531; --line:#26313f;
+    --fg:#e6edf3; --muted:#8b9bb0; --accent:#3b82f6; --accent2:#2563eb;
+    --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --log:#0a0e13;
+    --mono:"Cascadia Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif}
+  a{color:var(--accent)}
+  header{background:var(--panel);border-bottom:1px solid var(--line);
+         padding:14px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+         position:sticky;top:0;z-index:20}
+  header h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.2px}
+  header h1 span{color:var(--accent)}
+  .badges{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+  .badge{font-size:11px;padding:3px 8px;border-radius:20px;border:1px solid var(--line);
+         background:var(--panel2);color:var(--muted);white-space:nowrap}
+  .badge.ok{color:var(--ok);border-color:#1d4530}
+  .badge.bad{color:var(--bad);border-color:#4a1d1d}
+  main{display:grid;grid-template-columns:minmax(340px,420px) 1fr;gap:18px;
+       padding:18px;align-items:start;max-width:1600px;margin:0 auto}
+  @media(max-width:1000px){main{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+        padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 12px;font-size:13px;text-transform:uppercase;
+           letter-spacing:.8px;color:var(--muted);font-weight:600}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  select,input[type=text],input[type=number]{width:100%;padding:9px 10px;border-radius:7px;
+    background:var(--panel2);color:var(--fg);border:1px solid var(--line);font-size:13px}
+  select:focus,input:focus{outline:none;border-color:var(--accent)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  button{cursor:pointer;font:inherit;border-radius:7px;border:1px solid var(--line);
+         background:var(--panel2);color:var(--fg);padding:9px 14px;transition:.12s}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .primary{background:var(--accent);border-color:var(--accent);font-weight:600;
+           color:#fff;width:100%;padding:13px;font-size:15px}
+  .primary:hover:not(:disabled){background:var(--accent2)}
+  .danger{border-color:#7f1d1d;color:#fca5a5}
+  .presets{display:flex;gap:8px}
+  .presets button{flex:1;padding:8px 4px;font-size:12px}
+  .presets button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .drop{border:2px dashed var(--line);border-radius:9px;padding:16px;text-align:center;
+        color:var(--muted);font-size:12px;transition:.15s;margin-top:8px}
+  .drop.hot{border-color:var(--accent);background:#132033;color:var(--fg)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.45}
+  .warnbox{background:#2a1f0a;border:1px solid #5c4413;color:#fcd34d;
+           padding:10px 12px;border-radius:8px;font-size:12px;margin-bottom:14px}
+  details summary{cursor:pointer;color:var(--muted);font-size:12px;
+                  text-transform:uppercase;letter-spacing:.8px;font-weight:600;margin-bottom:6px}
+  .bar{height:9px;background:var(--panel2);border-radius:20px;overflow:hidden;
+       border:1px solid var(--line)}
+  .bar>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#22d3ee);
+         transition:width .4s}
+  .barwrap{display:flex;justify-content:space-between;font-size:12px;
+           color:var(--muted);margin-bottom:6px}
+  pre#log{background:var(--log);border:1px solid var(--line);border-radius:8px;
+    padding:12px;height:400px;overflow:auto;font:12px/1.5 var(--mono);
+    white-space:pre-wrap;word-break:break-word;margin:0;color:#c9d5e3}
+  .pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;
+        background:var(--panel2);border:1px solid var(--line);margin-left:8px}
+  .pill.running{color:var(--accent);border-color:#1e3a8a}
+  .pill.done{color:var(--ok);border-color:#1d4530}
+  .pill.failed,.pill.cancelled,.pill.interrupted{color:var(--bad);border-color:#4a1d1d}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase}
+  td.mono{font-family:var(--mono);font-size:11.5px}
+  .result{background:#0d2818;border:1px solid #1d4530;border-radius:8px;padding:12px;
+          margin-top:12px;font-size:13px}
+  .result a{font-weight:600}
+  .muted{color:var(--muted)}
+  .empty{color:var(--muted);font-size:12.5px;padding:10px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Video <span>Dublador</span></h1>
+  <div class="badges" id="badges"><span class="badge">carregando ambiente…</span></div>
+</header>
+
+<main>
+  <!-- ============ COLUNA ESQUERDA: CONFIGURAÇÃO ============ -->
+  <section>
+    <div class="card" id="hwcard">
+      <h2>Hardware detectado automaticamente</h2>
+      <div id="hwbody"><div class="empty">detectando…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>1. Vídeo</h2>
+      <label for="video">Escolha um vídeo da pasta <code>input/</code></label>
+      <select id="video"></select>
+      <div class="drop" id="drop">
+        ou <strong>arraste um arquivo aqui</strong> / clique para enviar
+        <input type="file" id="file" accept="video/*" hidden>
+      </div>
+      <div class="hint" id="videoinfo"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Idiomas</h2>
+      <div class="row">
+        <div>
+          <label for="target">Dublar para</label>
+          <select id="target"></select>
+        </div>
+        <div>
+          <label for="source">Idioma original</label>
+          <select id="source"></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. Qualidade</h2>
+      <div class="presets">
+        <button data-preset="auto" class="on">Automático</button>
+        <button data-preset="fast">Rápido</button>
+        <button data-preset="balanced">Equilibrado</button>
+        <button data-preset="quality">Qualidade</button>
+      </div>
+      <div class="hint" id="presethint"></div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>Avançado</summary>
+        <div class="row">
+          <div>
+            <label for="whisper_model">Modelo Whisper</label>
+            <select id="whisper_model">
+              <option value="auto" selected>Automático (pelo hardware)</option>
+              <option value="tiny">tiny (mais rápido)</option>
+              <option value="base">base</option>
+              <option value="small">small</option>
+              <option value="medium">medium</option>
+              <option value="large-v3">large-v3 (melhor)</option>
+            </select>
+          </div>
+          <div>
+            <label for="nfe_step">Passos F5-TTS</label>
+            <select id="nfe_step">
+              <option value="auto" selected>Automático</option>
+              <option value="8">8 (muito rápido)</option>
+              <option value="16">16 (equilibrado)</option>
+              <option value="24">24</option>
+              <option value="32">32 (melhor)</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="f5_model">Modelo de voz</label>
+            <select id="f5_model">
+              <option value="auto" selected>Automático (pelo hardware)</option>
+              <option value="F5TTS_v1_Base">F5TTS v1 Base</option>
+              <option value="F5TTS_v1_Small">F5TTS v1 Small (rápido)</option>
+            </select>
+          </div>
+          <div>
+            <label for="translator">Tradutor</label>
+            <select id="translator">
+              <option value="google" selected>Google</option>
+              <option value="mymemory">MyMemory</option>
+              <option value="libre">LibreTranslate</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="min_speakers">Mín. locutores</label>
+            <input type="number" id="min_speakers" value="1" min="1" max="10">
+          </div>
+          <div>
+            <label for="max_speakers">Máx. locutores</label>
+            <input type="number" id="max_speakers" value="6" min="1" max="10">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="background">Trilha original</label>
+            <select id="background">
+              <option value="none" selected>Descartar (dublagem limpa)</option>
+              <option value="duck">Manter abaixada (música/efeitos)</option>
+              <option value="separate">Separar com Demucs</option>
+            </select>
+          </div>
+          <div>
+            <label for="until">Parar após</label>
+            <select id="until">
+              <option value="all" selected>Concluir tudo</option>
+              <option value="transcribe">Transcrição</option>
+              <option value="voices">Análise de vozes</option>
+              <option value="translate">Tradução</option>
+              <option value="tts">Síntese de voz</option>
+              <option value="assemble">Montagem do áudio</option>
+            </select>
+          </div>
+        </div>
+        <label><input type="checkbox" id="no_lipsync"> Pular sincronização labial (mais rápido)</label>
+        <label><input type="checkbox" id="lipsync_force"> Forçar lip sync mesmo em vídeos longos</label>
+        <label><input type="checkbox" id="no_fix_duration"> Não forçar a fala a caber na janela original</label>
+        <div class="hint">A sincronização labial custa ~1 segundo por quadro.
+          Em vídeos acima de 90 s ela é pulada automaticamente.</div>
+      </details>
+    </div>
+
+    <button class="primary" id="go">Dublar vídeo</button>
+    <div class="hint" id="err" style="color:var(--bad)"></div>
+  </section>
+
+  <!-- ============ COLUNA DIREITA: EXECUÇÃO ============ -->
+  <section>
+    <div class="card">
+      <h2>Progresso <span class="pill" id="statuspill">ocioso</span></h2>
+      <div class="barwrap">
+        <span id="stagelabel">nenhum trabalho em execução</span>
+        <span id="pct">0%</span>
+      </div>
+      <div class="bar"><i id="barfill"></i></div>
+      <div class="barwrap" style="margin-top:8px">
+        <span id="elapsed"></span>
+        <span id="lastline" class="muted"></span>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button id="cancel" class="danger" disabled>Cancelar</button>
+        <button id="clear">Limpar registro</button>
+      </div>
+      <div id="result"></div>
+    </div>
+
+    <div class="card">
+      <h2>Registro ao vivo</h2>
+      <pre id="log">Escolha um vídeo e clique em “Dublar vídeo”.</pre>
+    </div>
+
+    <div class="card">
+      <h2>Saídas geradas</h2>
+      <div id="outputs"><div class="empty">nenhuma ainda</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Histórico</h2>
+      <div id="history"><div class="empty">nenhum trabalho ainda</div></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const TOKEN = "__TOKEN__";
+const $ = (id) => document.getElementById(id);
+const FIELDS = ["video","target","source","whisper_model","nfe_step","f5_model",
+                "translator","min_speakers","max_speakers","background","until",
+                "no_lipsync","lipsync_force","no_fix_duration"];
+let preset = "auto";
+let HW = null;
+let activeJob = null, logOffset = 0, poller = null, lastLen = 0;
+
+async function api(path, opts = {}) {
+  const o = Object.assign({headers:{}}, opts);
+  o.headers["X-Token"] = TOKEN;
+  if (o.body && typeof o.body === "string") o.headers["Content-Type"] = "application/json";
+  const r = await fetch(path, o);
+  const ct = r.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r;
+  }
+  const j = await r.json();
+  if (!r.ok || j.ok === false) throw new Error(j.error || ("HTTP " + r.status));
+  return j;
+}
+
+/* ---------- ambiente ---------- */
+async function loadEnv() {
+  try {
+    const j = await api("/api/env");
+    const b = $("badges"); b.innerHTML = "";
+    for (const [name, st] of Object.entries(j.checks)) {
+      const s = document.createElement("span");
+      s.className = "badge " + (st.ok ? "ok" : "bad");
+      s.textContent = (st.ok ? "✓ " : "✕ ") + name;
+      s.title = st.detail;
+      b.appendChild(s);
+    }
+  } catch (e) {
+    $("badges").innerHTML = '<span class="badge bad">falha ao ler o ambiente</span>';
+  }
+}
+
+/* ---------- listas ---------- */
+async function loadLanguages() {
+  const j = await api("/api/languages");
+  const t = $("target"), s = $("source");
+  t.innerHTML = ""; s.innerHTML = '<option value="auto">Detectar automaticamente</option>';
+  for (const l of j.languages) {
+    t.insertAdjacentHTML("beforeend", `<option value="${l.code}">${l.name} (${l.code})</option>`);
+    s.insertAdjacentHTML("beforeend", `<option value="${l.code}">${l.name} (${l.code})</option>`);
+  }
+  t.value = "pt";
+}
+
+async function loadVideos() {
+  const j = await api("/api/videos");
+  const v = $("video"); const keep = v.value;
+  v.innerHTML = "";
+  if (!j.videos.length) {
+    v.innerHTML = '<option value="">— nenhum vídeo em input/ —</option>';
+  } else {
+    for (const f of j.videos)
+      v.insertAdjacentHTML("beforeend",
+        `<option value="${f.name}">${f.name} (${f.size_mb} MB)</option>`);
+  }
+  if (keep) v.value = keep;
+
+  const o = $("outputs");
+  if (!j.outputs.length) o.innerHTML = '<div class="empty">nenhuma ainda</div>';
+  else {
+    o.innerHTML = '<table><tr><th>Arquivo</th><th>MB</th><th></th></tr>' +
+      j.outputs.map(f => `<tr><td class="mono">${f.name}</td><td>${f.size_mb}</td>
+        <td><a href="/api/file?kind=output&name=${encodeURIComponent(f.name)}">baixar</a></td></tr>`).join("") +
+      "</table>";
+  }
+  updateVideoInfo();
+}
+
+function updateVideoInfo() {
+  const opt = $("video").selectedOptions[0];
+  $("videoinfo").textContent = opt && opt.value ? "selecionado: " + opt.value : "";
+}
+
+/* ---------- upload ---------- */
+async function upload(file) {
+  if (!file) return;
+  $("err").textContent = "";
+  $("videoinfo").textContent = `enviando ${file.name}…`;
+  try {
+    const r = await fetch("/api/upload", {
+      method: "POST",
+      headers: {"X-Token": TOKEN, "X-Filename": file.name},
+      body: file,
+    });
+    const j = await r.json();
+    if (!r.ok || !j.ok) throw new Error(j.error || "falha no envio");
+    await loadVideos();
+    $("video").value = j.name;
+    updateVideoInfo();
+  } catch (e) {
+    $("err").textContent = "Erro no envio: " + e.message;
+  }
+}
+
+/* ---------- iniciar ---------- */
+function collect() {
+  const cfg = {};
+  for (const f of FIELDS) {
+    const el = $(f);
+    if (!el) continue;
+    cfg[f] = el.type === "checkbox" ? el.checked : el.value;
+  }
+  cfg.preset = preset;
+  return cfg;
+}
+
+async function start() {
+  $("err").textContent = "";
+  if (!$("video").value) { $("err").textContent = "Escolha ou envie um vídeo primeiro."; return; }
+  $("go").disabled = true;
+  logOffset = 0; lastLen = 0;
+  $("log").textContent = "";
+  $("result").innerHTML = "";
+  try {
+    const j = await api("/api/jobs", {method: "POST", body: JSON.stringify(collect())});
+    activeJob = j.job.id;
+    setStatus("running");
+    $("cancel").disabled = false;
+    poll();
+    if (poller) clearInterval(poller);
+    poller = setInterval(poll, 1500);
+  } catch (e) {
+    $("err").textContent = "Erro: " + e.message;
+    $("go").disabled = false;
+  }
+}
+
+async function poll() {
+  if (!activeJob) return;
+  try {
+    const {job} = await api("/api/jobs/" + activeJob);
+    const p = job.progress || {};
+    $("barfill").style.width = (p.percent || 0) + "%";
+    $("pct").textContent = (p.percent || 0).toFixed(0) + "%";
+    $("stagelabel").textContent = p.stage_label
+      ? `etapa ${p.stage_number}/7 — ${p.stage_label}` : "iniciando…";
+    $("elapsed").textContent = "decorrido " + job.elapsed_human;
+    $("lastline").textContent = (p.last_line || "").slice(0, 90);
+
+    const lg = await api(`/api/jobs/${activeJob}/log?offset=${logOffset}`);
+    if (lg.text) {
+      logOffset = lg.offset;
+      const pre = $("log");
+      pre.appendChild(document.createTextNode(lg.text));
+      pre.scrollTop = pre.scrollHeight;
+    }
+
+    setStatus(job.status);
+    if (["done","failed","cancelled","interrupted"].includes(job.status)) {
+      clearInterval(poller); poller = null;
+      $("go").disabled = false;
+      $("cancel").disabled = true;
+      activeJob = null;
+      showResult(job);
+      loadVideos();
+      loadHistory();
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function setStatus(s) {
+  const map = {queued:"na fila",running:"executando",done:"concluído",
+               failed:"falhou",cancelled:"cancelado",interrupted:"interrompido"};
+  const p = $("statuspill");
+  p.textContent = map[s] || "ocioso";
+  p.className = "pill " + s;
+}
+
+function showResult(job) {
+  const r = $("result");
+  if (job.status === "done" && job.output) {
+    const name = job.output.split(/[\\/]/).pop();
+    r.innerHTML = `<div class="result">
+      <strong>Pronto em ${job.elapsed_human}.</strong><br>
+      <span class="mono">${name}</span><br><br>
+      <a href="/api/file?kind=output&name=${encodeURIComponent(name)}">⬇ Baixar vídeo dublado</a>
+      </div>`;
+  } else if (job.status === "cancelled") {
+    r.innerHTML = `<div class="result" style="background:#2a1f0a;border-color:#5c4413;color:#fcd34d">
+      Cancelado. O progresso foi salvo — rode de novo para continuar de onde parou.</div>`;
+  } else {
+    r.innerHTML = `<div class="result" style="background:#2a0f0f;border-color:#5c1d1d;color:#fca5a5">
+      ${job.status === "done" ? "" : "<strong>Falhou:</strong> "}
+      ${(job.error || "veja o registro acima").replace(/</g,"&lt;")}</div>`;
+  }
+}
+
+async function cancel() {
+  if (!activeJob) return;
+  $("cancel").disabled = true;
+  try { await api(`/api/jobs/${activeJob}/cancel`, {method:"POST"}); } catch(e){ console.error(e); }
+}
+
+/* ---------- histórico ---------- */
+async function loadHistory() {
+  try {
+    const j = await api("/api/jobs");
+    const h = $("history");
+    if (!j.jobs.length) { h.innerHTML = '<div class="empty">nenhum trabalho ainda</div>'; return; }
+    h.innerHTML = '<table><tr><th>Quando</th><th>Vídeo</th><th>Idioma</th><th>Estado</th><th>Tempo</th></tr>' +
+      j.jobs.slice(0,12).map(x => {
+        const d = new Date(x.created * 1000).toLocaleString("pt-BR");
+        return `<tr><td class="mono">${d}</td>
+          <td class="mono">${(x.video||"").split(/[\\/]/).pop()}</td>
+          <td>${x.target}</td><td><span class="pill ${x.status}">${x.status}</span></td>
+          <td>${x.elapsed_human}</td></tr>`;
+      }).join("") + "</table>";
+  } catch (e) { console.error(e); }
+}
+
+/* ---------- hardware ---------- */
+async function loadHardware() {
+  try {
+    const j = await api("/api/hardware");
+    HW = {hw: j.hardware, rec: j.recommendation};
+    const h = j.hardware, r = j.recommendation;
+    const gpu = (h.gpus || []).find(g => g.available);
+    const gpuTxt = gpu
+      ? `${gpu.name} <span class="muted">(${gpu.vram_gb} GB VRAM, ${gpu.backend})</span>`
+      : ((h.gpus || [])[0]
+          ? `${h.gpus[0].name} <span class="muted">— não utilizável (sem CUDA)</span>`
+          : "nenhuma detectada");
+
+    $("hwbody").innerHTML = `
+      <table>
+        <tr><td>CPU</td><td><strong>${h.cpu.model}</strong><br>
+          <span class="muted">${h.cpu.physical_cores} núcleos físicos /
+          ${h.cpu.logical_cores} threads</span></td></tr>
+        <tr><td>GPU</td><td>${gpuTxt}</td></tr>
+        <tr><td>Memória</td><td>${h.memory.total_gb} GB
+          <span class="muted">(${h.memory.available_gb} GB livres)</span></td></tr>
+        <tr><td>Disco</td><td>${h.disk_free_gb} GB livres</td></tr>
+        <tr><td>Classificação</td><td><strong>${r.tier_label}</strong></td></tr>
+      </table>
+      <div class="hint">
+        <strong>Previsão:</strong> ~${r.realtime_factor}× o tempo real
+        → 1 min de vídeo em ~${r.eta_per_minute}.<br>
+        Vai usar: Whisper <strong>${r.whisper_model}</strong>,
+        <strong>${r.nfe_step} passos</strong>, voz
+        <strong>${r.f5_model.replace("F5TTS_v1_", "")}</strong>,
+        <strong>${r.threads} threads</strong>${r.lipsync ? ", com lip sync" : ", sem lip sync"}.
+      </div>
+      ${(r.notes && r.notes.length)
+        ? '<div class="hint" style="color:#fcd34d">' +
+          r.notes.map(n => "• " + n).join("<br>") + "</div>"
+        : ""}`;
+    if (preset === "auto") applyPreset("auto");
+  } catch (e) {
+    $("hwbody").innerHTML = '<div class="empty">não foi possível detectar o hardware</div>';
+  }
+}
+
+/* ---------- presets / persistência ---------- */
+function applyPreset(name) {
+  preset = name;
+  document.querySelectorAll(".presets button").forEach(b =>
+    b.classList.toggle("on", b.dataset.preset === name));
+
+  if (name === "auto") {
+    $("whisper_model").value = "auto";
+    $("nfe_step").value = "auto";
+    $("f5_model").value = "auto";
+    $("presethint").innerHTML = HW
+      ? `O programa escolhe tudo sozinho pelo hardware detectado: ` +
+        `<strong>Whisper ${HW.rec.whisper_model}</strong>, ` +
+        `<strong>${HW.rec.nfe_step} passos</strong>, voz ` +
+        `<strong>${HW.rec.f5_model.replace("F5TTS_v1_", "")}</strong>` +
+        (HW.rec.lipsync ? ", com lip sync." : ", sem lip sync.")
+      : "O programa escolhe os melhores ajustes para esta máquina.";
+  } else if (name === "fast") {
+    $("whisper_model").value = "small"; $("nfe_step").value = "16";
+    $("f5_model").value = "F5TTS_v1_Base";
+    $("no_lipsync").checked = true;
+    $("presethint").textContent = "Whisper small, 16 passos, sem lip sync — melhor para testar o fluxo.";
+  } else if (name === "balanced") {
+    $("whisper_model").value = "small"; $("nfe_step").value = "16";
+    $("f5_model").value = "F5TTS_v1_Base";
+    $("no_lipsync").checked = false;
+    $("presethint").textContent = "Whisper small, 16 passos, com lip sync. Bom custo/benefício.";
+  } else if (name === "quality") {
+    $("whisper_model").value = "large-v3"; $("nfe_step").value = "32";
+    $("f5_model").value = "F5TTS_v1_Base";
+    $("no_lipsync").checked = false;
+    $("presethint").textContent = "Whisper large-v3, 32 passos, com lip sync. Muito lento nesta máquina.";
+  }
+  save();
+}
+
+function save() {
+  const s = collect();
+  try { localStorage.setItem("dublador", JSON.stringify(s)); } catch(e){}
+}
+function restore() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem("dublador") || "{}"); } catch(e){}
+  for (const f of FIELDS) {
+    if (s[f] === undefined) continue;
+    const el = $(f); if (!el) continue;
+    if (el.type === "checkbox") el.checked = !!s[f]; else el.value = s[f];
+  }
+  applyPreset(s.preset || "auto");
+}
+
+/* ---------- eventos ---------- */
+document.addEventListener("DOMContentLoaded", async () => {
+  await loadEnv();
+  await loadLanguages();
+  await loadVideos();
+  restore();
+  loadHardware();      // asynchronous: fills the hardware card and the auto hint
+  loadHistory();
+
+  $("go").onclick = start;
+  $("cancel").onclick = cancel;
+  $("clear").onclick = () => { $("log").textContent = ""; };
+  $("video").onchange = () => { updateVideoInfo(); save(); };
+  for (const f of FIELDS) {
+    const el = $(f);
+    if (el) el.addEventListener("change", save);
+  }
+  document.querySelectorAll(".presets button").forEach(b =>
+    b.onclick = () => applyPreset(b.dataset.preset));
+
+  const drop = $("drop"), file = $("file");
+  drop.onclick = () => file.click();
+  file.onchange = () => upload(file.files[0]);
+  ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.add("hot");
+  }));
+  ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.remove("hot");
+  }));
+  drop.addEventListener("drop", e => {
+    if (e.dataTransfer.files.length) upload(e.dataTransfer.files[0]);
+  });
+});
+</script>
+</body>
+</html>
