@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -298,6 +299,25 @@ def cmd_gui(argv: List[str]) -> int:
 # --------------------------------------------------------------------------
 # argument parsing
 # --------------------------------------------------------------------------
+def parse_glossary(spec: str) -> Dict[str, str]:
+    """Parse ``--glossary "Tony Stark=Homem de Ferro;S.H.I.E.L.D.=SHIELD"``.
+
+    Terms listed here are substituted verbatim after translation, which is how
+    you stop a machine translator from inventing a new name for a character
+    every other scene.
+    """
+    out: Dict[str, str] = {}
+    for chunk in re.split(r"[;\n]", spec or ""):
+        chunk = chunk.strip()
+        if not chunk or "=" not in chunk:
+            continue
+        src, _, dst = chunk.partition("=")
+        src, dst = src.strip(), dst.strip()
+        if src and dst:
+            out[src] = dst
+    return out
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog=PROG,
@@ -354,6 +374,25 @@ Presets:
     g = p.add_argument_group("translation")
     g.add_argument("--translator", default="google",
                    choices=["google", "mymemory", "libre"])
+    g.add_argument("--translate-context", type=int, default=4,
+                   help="traduzir N falas seguidas juntas para dar contexto (1 = isolado)")
+
+    g = p.add_argument_group("naturalização do texto (dublagem natural)")
+    g.add_argument("--no-naturalize", action="store_true",
+                   help="usar a tradução literal, sem adaptar para fala")
+    g.add_argument("--register", default="colloquial",
+                   choices=["colloquial", "neutral", "formal"],
+                   help="registro da fala (padrão: coloquial, como em dublagem)")
+    g.add_argument("--no-fit-slots", action="store_true",
+                   help="não encurtar falas longas demais para a janela de tempo")
+    g.add_argument("--glossary", default="",
+                   help="termos fixos, ex: 'Tony Stark=Homem de Ferro;S.H.I.E.L.D.=SHIELD'")
+    g.add_argument("--llm-url", default="",
+                   help="endpoint compatível com OpenAI (ou Ollama) para refinar o texto")
+    g.add_argument("--llm-model", default="", help="modelo do LLM")
+    g.add_argument("--llm-key", default="", help="chave da API do LLM")
+    g.add_argument("--llm-ollama", action="store_true",
+                   help="usar a API nativa do Ollama em vez de /chat/completions")
 
     g = p.add_argument_group("text to speech (F5-TTS)")
     g.add_argument("--f5-model", default="F5TTS_v1_Base",
@@ -394,8 +433,8 @@ Presets:
                    help="ignore cached stages and recompute everything")
     g.add_argument("--until", default="all",
                    choices=["all", "extract", "transcribe", "voices", "translate",
-                            "tts", "assemble", "finish"],
-                   help="stop after this stage; useful to inspect the translation "
+                            "naturalize", "tts", "assemble", "finish"],
+                   help="stop after this stage; useful to inspect the adapted text "
                         "before committing to a long synthesis run")
     g.add_argument("--transcribe-only", action="store_true",
                    help="only transcribe (cheap smoke test)")
@@ -421,6 +460,15 @@ def cfg_from_args(args: argparse.Namespace) -> DubladorConfig:
         whisper_beam_size=args.beam_size,
         vad_filter=not args.no_vad,
         translator=args.translator,
+        translate_context=args.translate_context,
+        naturalize=not args.no_naturalize,
+        naturalize_register=args.register,
+        naturalize_fit_slots=not args.no_fit_slots,
+        glossary=parse_glossary(args.glossary),
+        llm_base_url=args.llm_url,
+        llm_model=args.llm_model,
+        llm_api_key=args.llm_key,
+        llm_flavour="ollama" if args.llm_ollama else "openai",
         min_speakers=args.min_speakers,
         max_speakers=args.max_speakers,
         speaker_threshold=args.speaker_threshold,

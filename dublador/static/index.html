@@ -178,6 +178,54 @@
         </div>
         <div class="row">
           <div>
+            <label for="translate_context">Contexto da tradução</label>
+            <select id="translate_context">
+              <option value="1">Frase por frase</option>
+              <option value="4" selected>4 falas juntas (recomendado)</option>
+              <option value="8">8 falas juntas</option>
+              <option value="16">16 falas juntas</option>
+            </select>
+          </div>
+          <div>
+            <label for="register">Registro da fala</label>
+            <select id="register">
+              <option value="colloquial" selected>Coloquial (como em dublagem)</option>
+              <option value="neutral">Neutro</option>
+              <option value="formal">Formal</option>
+            </select>
+          </div>
+        </div>
+        <label><input type="checkbox" id="naturalize" checked>
+          Adaptar o texto para fala natural (recomendado)</label>
+        <label><input type="checkbox" id="no_fit_slots">
+          Não encurtar falas longas demais para a janela de tempo</label>
+        <label for="glossary">Glossário (termos fixos)</label>
+        <input type="text" id="glossary"
+               placeholder="Tony Stark=Homem de Ferro;S.H.I.E.L.D.=SHIELD">
+        <div class="hint">
+          A adaptação reescreve a tradução literal em fala de verdade — futuro do
+          presente, conectivos pesados e contrações — e avisa quando o texto
+          <em>cabe</em> no tempo da fala original. É a diferença entre legenda lida
+          em voz alta e dublagem.
+        </div>
+        <label for="llm_url">Refinar com IA (opcional)</label>
+        <input type="text" id="llm_url" placeholder="http://localhost:11434/v1">
+        <div class="row">
+          <div>
+            <label for="llm_model">Modelo</label>
+            <input type="text" id="llm_model" placeholder="llama3.1">
+          </div>
+          <div>
+            <label for="llm_key">Chave da API</label>
+            <input type="text" id="llm_key" placeholder="(vazio para Ollama)">
+          </div>
+        </div>
+        <label><input type="checkbox" id="llm_ollama">
+          Usar API nativa do Ollama</label>
+        <div class="hint">Sem endpoint de IA, a adaptação roda só com regras —
+          que já resolve os problemas mecânicos.</div>
+        <div class="row">
+          <div>
             <label for="min_speakers">Mín. locutores</label>
             <input type="number" id="min_speakers" value="1" min="1" max="10">
           </div>
@@ -260,7 +308,9 @@
 const TOKEN = "__TOKEN__";
 const $ = (id) => document.getElementById(id);
 const FIELDS = ["video","target","source","whisper_model","nfe_step","f5_model",
-                "translator","min_speakers","max_speakers","background","until",
+                "translator","translate_context","register","naturalize",
+                "no_fit_slots","glossary","llm_url","llm_model","llm_key","llm_ollama",
+                "min_speakers","max_speakers","background","until",
                 "no_lipsync","lipsync_force","no_fix_duration"];
 let preset = "auto";
 let HW = null;

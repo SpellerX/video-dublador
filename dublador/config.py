@@ -153,6 +153,25 @@ class DubladorConfig:
     # ---- translation ----------------------------------------------------
     translator: str = "google"                 # google|mymemory|libre
     translate_batch_size: int = 20
+    #: Translate this many consecutive lines together so the engine can resolve
+    #: pronouns and keep the exchange coherent. 0 or 1 = line by line.
+    translate_context: int = 4
+
+    # ---- naturalisation (making the dub sound spoken, not translated) ----
+    naturalize: bool = True
+    #: neutral | colloquial | formal -- applied to every character.
+    naturalize_register: str = "colloquial"
+    #: Rewrite lines that cannot be spoken inside their original time slot.
+    #: Runs before synthesis, where a fix costs milliseconds instead of hours.
+    naturalize_fit_slots: bool = True
+    #: Optional LLM refinement -- the only pass that fixes subtle idiom and
+    #: register problems.  Empty ``llm_base_url`` disables it entirely.
+    #: Any OpenAI-compatible endpoint or Ollama.  NEVER commit an api key.
+    llm_base_url: str = ""
+    llm_model: str = ""
+    llm_api_key: str = ""
+    llm_flavour: str = "openai"                # openai | ollama
+    glossary: Dict[str, str] = field(default_factory=dict)
 
     # ---- voice analysis -------------------------------------------------
     min_speakers: int = 1

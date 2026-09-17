@@ -347,6 +347,33 @@ def build_cli_args(video: Path, cfg: Dict[str, Any]) -> List[str]:
         args += ["--no-fix-duration"]
     if cfg.get("verbose") is True:
         args += ["-v"]
+
+    # ---- naturalisation ------------------------------------------------
+    if cfg.get("naturalize") is False:
+        args += ["--no-naturalize"]
+    if cfg.get("no_fit_slots") is True:
+        args += ["--no-fit-slots"]
+
+    text_opts = {
+        "register": "--register",
+        "glossary": "--glossary",
+        "llm_url": "--llm-url",
+        "llm_model": "--llm-model",
+        "llm_key": "--llm-key",
+    }
+    for key, flag in text_opts.items():
+        val = cfg.get(key)
+        if isinstance(val, str) and val.strip():
+            args += [flag, val.strip()]
+    if cfg.get("translate_context"):
+        try:
+            ctx = int(cfg["translate_context"])
+            if ctx > 1:
+                args += ["--translate-context", str(ctx)]
+        except (TypeError, ValueError):
+            pass
+    if cfg.get("llm_ollama") is True:
+        args += ["--llm-ollama"]
     return args
 
 

@@ -7,7 +7,8 @@ e devolve o vídeo dublado** no idioma escolhido.
 ```
 vídeo ──► extrai áudio ──► transcreve (Whisper)
       ──► analisa as vozes (diarização + escolhe clipes de referência)
-      ──► traduz
+      ──► traduz (em janelas, para dar contexto)
+      ──► NATURALIZA o texto para fala de verdade (adaptação de dublagem)
       ──► clona cada voz e sintetiza (F5-TTS)
       ──► encaixa cada fala na sua janela de tempo original
       ──► remonta a linha do tempo do áudio
@@ -344,6 +345,94 @@ cadeia de fallback (`google` → `mymemory` → `libre`).
 > está sendo usado de fato. O cache em `work/<job>/translation_cache.json`
 > evita repetir chamadas de rede.
 
+### 3.4b Naturalização do diálogo (`naturalize.py`)
+
+Tradução literal é *correta* mas raramente *falável*. Uma dublagem profissional
+tem uma etapa de adaptação, e os quatro problemas são distintos o bastante para
+precisarem de tratamentos separados:
+
+| Problema | Exemplo | Tratamento |
+|---|---|---|
+| **Falta de contexto** | "Where is she?" → pronome solto | tradução em **janelas** de 4 falas (3.4) |
+| **Traduçãozês** | "Eu irei", "No entanto", "Compreendo" | pacotes de regras por idioma |
+| **Registro** | formal demais para um personagem | `--register colloquial/neutral/formal` |
+| **Isocronia** | a fala não cabe na janela de tempo | relatório **antes** da síntese + encurtamento seguro |
+
+O maior marcador de português traduzido é o **futuro do presente**: ninguém diz
+*"direi a ela amanhã"*. A adaptação troca por *"vou falar pra ela amanhã"* —
+mantendo o sentido de futuro (usa `ir + infinitivo`, não o presente, que mudaria
+o que o personagem está dizendo).
+
+```
+  PT literal  : Não, direi a ela amanhã.
+  PT para fala: Não, vou dizer pra ela amanhã.
+
+  PT literal  : No entanto, eu estou cansado.
+  PT para fala: Mas, eu tô cansado.
+```
+
+#### Isocronia: pegar o problema antes de gastar horas
+
+O relatório roda **antes** da síntese, onde corrigir custa milissegundos em vez
+de minutos por fala. Ele separa dois casos:
+
+```
+  2 fala(s) mais longas que a janela (de 3 no total):
+    seg 1    janela 2.10s, fala ~2.73s (1.30x): Demorou mais do que você prometeu.
+  ! seg 2    janela 1.40s, fala ~1.94s (1.39x): Está tudo pronto agora.
+  ('!' = 1.35x ou mais: o ajuste de tempo cortaria a fala, entao vale encurtar)
+  1 fala(s) entre 1.15x e 1.35x: o ajuste de tempo resolve, texto mantido
+  1 fala(s) longa(s) demais para encurtar sem perder o sentido - o ajuste de
+    tempo vai acelerar ate o limite
+```
+
+- Até **1,35×** o `fit_to_slot` acelera a fala de forma transparente — não vale
+  mexer no texto.
+- Acima disso o ajuste de tempo **cortaria a fala no meio**, então o texto é
+  encurtado — mas só quando dá para fazer isso **sem perder o sentido**.
+
+> ⚠️ **O encurtamento é deliberadamente tímido.** Uma primeira versão era
+> agressiva e transformou *"Eu irei verificar o relatório completo amanhã"* em
+> *"Eu vou."* e *"No entanto, eu estou cansado"* em *"Mas."* — perfeito para
+> caber no tempo e catastrófico para o diálogo. Agora uma reescrita só é aceita
+> se mantiver **55% dos caracteres** e no mínimo 14 caracteres; caso contrário o
+> texto fica intacto e o ajuste de tempo resolve.
+
+> ⚠️ **Regras que mudam sentido foram deliberadamente excluídas**, por mais
+> tentadoras que fossem: `o mesmo → ele` quebra *"o mesmo aconteceu comigo"*;
+> `com você → contigo` está errado para português brasileiro; `Vamos embora →
+> Vamos nessa` troca "vamos sair" por "vamos fazer isso". Esses padrões ficam
+> em **avisos** (reportados, nunca reescritos), porque uma adaptação que muda o
+> sentido silenciosamente é pior do que não adaptar.
+
+#### Refinamento opcional com IA
+
+As regras resolvem o mecânico; problemas sutis de idiomatismo precisam de um
+modelo de linguagem. Se você tiver um endpoint, ative:
+
+```powershell
+# Ollama local
+.\run.ps1 filme.mp4 --target pt --llm-url http://localhost:11434/v1 --llm-model llama3.1
+
+# Qualquer API compatível com OpenAI
+.\run.ps1 filme.mp4 --target pt --llm-url https://api.openai.com/v1 `
+                    --llm-model gpt-4o-mini --llm-key $env:OPENAI_API_KEY
+```
+
+Sem endpoint configurado, **a adaptação por regras roda sozinha** e o pipeline
+funciona normalmente.
+
+#### Glossário
+
+Impede o tradutor de inventar um nome novo para o mesmo personagem a cada cena:
+
+```powershell
+.\run.ps1 filme.mp4 --target pt --glossary "Tony Stark=Homem de Ferro;S.H.I.E.L.D.=SHIELD"
+```
+
+Na interface, tudo isso está em **Avançado** — inclusive o glossário e o
+endpoint de IA.
+
 ### 3.5 Clonagem e síntese (`tts.py`)
 F5-TTS é um modelo de *flow matching* que clona uma voz a partir de um clipe
 curto + sua transcrição, **sem fine-tuning por locutor**. Três recursos são
@@ -503,7 +592,8 @@ dublador/
   schema.py      modelos de dados (Transcript, Segment, SpeakerProfile, Word)
   transcribe.py  Whisper (faster-whisper) + timestamps por palavra
   speakers.py    diarização + seleção de clipes de referência
-  translate.py   tradução por segmento com cache e fallback
+  translate.py   tradução por segmento com cache, fallback e janelas de contexto
+  naturalize.py  adaptação para fala (traduçãozês, registro, isocronia) + IA opcional
   tts.py         clonagem de voz e síntese com F5-TTS
   assemble.py    remontagem da linha do tempo (numpy) + separação opcional
   lipsync.py     Wav2Lip (rede + S3FD) com degradação elegante

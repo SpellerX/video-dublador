@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -243,7 +244,23 @@ class TextTranslator:
     def translate(self, text: str) -> str:
         return self._one(text)
 
-    def translate_many(self, texts: Sequence[str], *, label: str = "translating") -> List[str]:
+    def translate_many(self, texts: Sequence[str], *, label: str = "translating",
+                       window: int = 0) -> List[str]:
+        """Translate every line, optionally giving the engine conversation context.
+
+        Translating one line at a time is what makes dialogue read like a
+        translation: pronouns dangle, gender agreement breaks, and replies stop
+        matching the question.  With ``window > 1`` consecutive lines are sent
+        together, separated by newlines, so the engine sees the exchange -- then
+        the reply is split back and validated against the expected line count.
+        Any window that does not come back aligned is retranslated line by line,
+        so context can only ever help.
+        """
+        if window and window > 1 and len(texts) > 1:
+            return self._translate_windowed(texts, window, label)
+        return self._translate_each(texts, label)
+
+    def _translate_each(self, texts: Sequence[str], label: str) -> List[str]:
         results: List[Optional[str]] = [None] * len(texts)
         prog = Progress(len(texts), label=label, every=max(1, len(texts) // 20 or 1))
 
@@ -265,6 +282,90 @@ class TextTranslator:
 
         return [r if r is not None else texts[i] for i, r in enumerate(results)]
 
+    def _translate_windowed(self, texts: Sequence[str], window: int,
+                            label: str) -> List[str]:
+        results: List[Optional[str]] = [None] * len(texts)
+
+        # Only group lines that actually need translating.
+        todo = [i for i, t in enumerate(texts) if (t or "").strip()]
+        groups = [todo[i:i + window] for i in range(0, len(todo), window)]
+
+        prog = Progress(len(texts), label=label, every=max(1, len(texts) // 20 or 1))
+        self.stats.setdefault("windows", 0)
+        self.stats.setdefault("window_fallbacks", 0)
+
+        def run(group: List[int]) -> List[Tuple[int, str]]:
+            lines = [texts[i] for i in group]
+
+            # Reuse cached lines; only ask for the ones we do not have.
+            if self.cache:
+                missing = [j for j, ln in enumerate(lines)
+                           if self.cache.get(ln, self.source, self.target, self.backend) is None]
+            else:
+                missing = list(range(len(lines)))
+
+            if not missing:
+                return [(group[j], self.cache.get(lines[j], self.source, self.target,
+                                                   self.backend) or lines[j])
+                        for j in range(len(lines))]
+
+            if len(lines) == 1 or len(missing) == len(lines):
+                joined = "\n".join(lines)
+                try:
+                    out = self._one_window(joined)
+                except Exception as e:  # noqa: BLE001
+                    LOG.debug("window translation failed (%s); per-line fallback", e)
+                    out = ""
+                parts = [p.strip() for p in re.split(r"\n+", out or "") if p.strip()]
+                if len(parts) == len(lines) and all(parts):
+                    self.stats["windows"] += 1
+                    if self.cache:
+                        for ln, tr in zip(lines, parts):
+                            self.cache.put(ln, self.source, self.target, self.backend, tr)
+                    return list(zip(group, parts))
+                self.stats["window_fallbacks"] += 1
+                LOG.debug("window returned %d lines for %d inputs; falling back",
+                          len(parts), len(lines))
+
+            # Fallback: translate just the missing lines individually.
+            return [(i, self._one(texts[i])) for i in group]
+
+        if self.workers == 1:
+            for g in groups:
+                pairs = run(g)          # exactly one call per group
+                for i, v in pairs:
+                    results[i] = v
+                for _ in pairs:
+                    prog.step()
+        else:
+            with ThreadPoolExecutor(max_workers=self.workers) as pool:
+                futs = [pool.submit(run, g) for g in groups]
+                for fut in as_completed(futs):
+                    for i, v in fut.result():
+                        results[i] = v
+                    prog.step()
+
+        return [r if r is not None else texts[i] for i, r in enumerate(results)]
+
+    def _one_window(self, joined: str) -> str:
+        """Translate a multi-line blob, bypassing the per-line cache."""
+        last_err: Optional[Exception] = None
+        for backend in self.backends:
+            for attempt in range(self.retries):
+                try:
+                    out = self._invoke(backend, joined)
+                    if out and str(out).strip():
+                        return self._restore(str(out).strip())
+                except Exception as e:  # noqa: BLE001
+                    last_err = e
+                    if backend not in self._warned:
+                        self._warned.add(backend)
+                        LOG.warning("translator backend '%s' is failing (%s: %s); "
+                                    "falling back to the next one",
+                                    backend, type(e).__name__, e)
+                    time.sleep(min(4.0, 0.6 * (2 ** attempt)))
+        raise RuntimeError(f"all translator backends failed: {last_err}")
+
 
 def translate_transcript(
     tr: Transcript,
@@ -276,8 +377,13 @@ def translate_transcript(
     workers: int = 4,
     glossary: Optional[Dict[str, str]] = None,
     skip_empty: bool = True,
+    context: int = 0,
 ) -> Transcript:
-    """Fill ``segment.translation`` for every segment, in place and concurrently."""
+    """Fill ``segment.translation`` for every segment, in place and concurrently.
+
+    ``context`` > 1 translates that many consecutive lines together so the
+    engine can resolve pronouns and keep the exchange coherent.
+    """
     banner(f"TRANSLATION -> {target_lang}")
 
     src = (source_lang or tr.language or "auto").lower()
@@ -299,10 +405,12 @@ def translate_transcript(
     else:
         todo_idx = list(range(len(texts)))
 
-    LOG.info("translating %d segments %s -> %s via %s",
-             len(todo_idx), LANGUAGES.get(src, src), LANGUAGES.get(tgt, tgt), backend)
+    LOG.info("translating %d segments %s -> %s via %s%s",
+             len(todo_idx), LANGUAGES.get(src, src), LANGUAGES.get(tgt, tgt), backend,
+             f" (janelas de {context} falas para dar contexto)" if context > 1 else "")
 
-    out_vals = translator.translate_many([texts[i] for i in todo_idx], label="  translated")
+    out_vals = translator.translate_many([texts[i] for i in todo_idx],
+                                         label="  translated", window=context)
 
     for slot, idx in enumerate(todo_idx):
         tr.segments[idx].translation = out_vals[slot]
@@ -315,6 +423,9 @@ def translate_transcript(
         LOG.info("translation cache: %d entries (%d reused, %d fetched, %d failed)",
                  len(cache), translator.stats["hit"], translator.stats["api"],
                  translator.stats["failed"])
+    if translator.stats.get("windows"):
+        LOG.info("  %d janela(s) traduzidas com contexto, %d revertida(s) para linha a linha",
+                 translator.stats["windows"], translator.stats.get("window_fallbacks", 0))
 
     tr.extra["translation"] = {
         "source": src, "target": tgt, "backend": backend, **translator.stats,

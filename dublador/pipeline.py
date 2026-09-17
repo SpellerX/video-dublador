@@ -49,7 +49,8 @@ class PipelineResult:
 #: Ordered stages accepted by ``--until``.  On slow hardware it is often useful
 #: to run the pipeline only as far as translation and inspect the result before
 #: committing an hour to synthesis.
-STAGE_ORDER = ("extract", "transcribe", "voices", "translate", "tts", "assemble", "finish")
+STAGE_ORDER = ("extract", "transcribe", "voices", "translate", "naturalize",
+               "tts", "assemble", "finish")
 
 
 def _stage_index(stage: str) -> int:
@@ -249,11 +250,50 @@ def _stage_translate(cfg: DubladorConfig, tr: Transcript, work: Path) -> Transcr
         backend=cfg.translator,
         cache_path=cache_path,
         workers=max(1, min(8, cfg.resolve_threads() * 2)),
+        context=cfg.translate_context,
+        glossary=cfg.glossary,
     )
     write_json(work / "transcript_translated.json", tr.to_dict())
     (work / "subtitles_target.srt").write_text(tr.to_srt(translated=True), encoding="utf-8")
     (work / "subtitles_source.srt").write_text(tr.to_srt(translated=False), encoding="utf-8")
     LOG.info("  wrote subtitles_target.srt and subtitles_source.srt")
+    return tr
+
+
+def _stage_naturalize(cfg: DubladorConfig, tr: Transcript, work: Path) -> Transcript:
+    """Rewrite the translation into natural spoken language before synthesis.
+
+    Text is free and F5-TTS is not: catching a line that will not fit its time
+    slot here saves minutes of synthesis per line, and fixing translationese
+    here is what separates a dub from a subtitle read aloud.
+    """
+    banner("STAGE 4b/7  NATURALISATION OF THE DIALOGUE")
+    from .naturalize import LLMRewriter, naturalize_transcript
+
+    if not cfg.naturalize:
+        LOG.info("  naturalisation disabled (--no-naturalize)")
+        return tr
+
+    llm = LLMRewriter(
+        base_url=cfg.llm_base_url, model=cfg.llm_model,
+        api_key=cfg.llm_api_key, flavour=cfg.llm_flavour,
+    )
+    tr.extra["glossary"] = dict(cfg.glossary or {})
+    if not llm.available():
+        LOG.info("  rule-based adaptation only (no LLM endpoint configured)")
+
+    tr = naturalize_transcript(
+        tr, cfg.target_lang,
+        glossary=cfg.glossary,
+        register=cfg.naturalize_register,
+        fit_slots=cfg.naturalize_fit_slots,
+        llm=llm,
+        out_path=work / "naturalize_changes.json",
+    )
+    write_json(work / "transcript_naturalized.json", tr.to_dict())
+    # Refresh the subtitles so they match what is actually spoken.
+    (work / "subtitles_target.srt").write_text(tr.to_srt(translated=True), encoding="utf-8")
+    LOG.info("  wrote transcript_naturalized.json and refreshed subtitles_target.srt")
     return tr
 
 
@@ -437,6 +477,11 @@ def run_pipeline(cfg: DubladorConfig, until: str = "all") -> PipelineResult:
     tr = _stage_translate(cfg, tr, work)
     if reached("translate"):
         return partial("translate", tr)
+
+    # 4b ------------------------------------------------------------------
+    tr = _stage_naturalize(cfg, tr, work)
+    if reached("naturalize"):
+        return partial("naturalize", tr)
 
     # 5 -------------------------------------------------------------------
     tr = _stage_tts(cfg, tr, paths, work, cache)
